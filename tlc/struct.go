@@ -40,7 +40,7 @@ type chanRoundMessage struct {
 	MessageBroadcast
 }
 
-type chanMessageAck struct {
+type chanAckMessage struct {
 	*onet.TreeNode
 	MessageAck
 }

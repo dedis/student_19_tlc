@@ -4,8 +4,12 @@ import (
 	"errors"
 	"fmt"
 
+	"go.dedis.ch/onet/log"
 	"go.dedis.ch/onet/v3"
 )
+
+// ValidationFunction validates the correctness of message payloads
+type ValidationFunction func(msg *MessageBroadcast, sender onet.TreeNodeID) error
 
 type ackMap map[onet.TreeNodeID]bool
 
@@ -101,6 +105,8 @@ type MultiRoundCounter struct {
 	ackBuffer map[roundNum]oneRoundAcks
 
 	currentRound roundNum
+
+	VF ValidationFunction
 }
 
 // NewMultiRoundCounter creates a new MultiRoundCounter where tMsgs is the message threshold and
@@ -111,6 +117,7 @@ func NewMultiRoundCounter(tMsgs, tAcks uint64) *MultiRoundCounter {
 		msgBuffer:          make(map[roundNum]oneRoundMessages),
 		ackBuffer:          make(map[roundNum]oneRoundAcks),
 		currentRound:       0,
+		VF:                 defaultValidationFunction,
 	}
 }
 
@@ -128,6 +135,10 @@ func (mrc *MultiRoundCounter) AddMessage(msg *MessageBroadcast, sender onet.Tree
 	}
 
 	if msg.Round == mrc.currentRound {
+		if err := mrc.VF(msg, sender); err != nil {
+			return fmt.Errorf("%v. round: %v, sender: %s", err, msg.Round, sender)
+		}
+
 		err := mrc.addMessage(msg, sender)
 		if err != nil {
 			return fmt.Errorf("%v. round: %v, sender: %s", err, msg.Round, sender)
@@ -192,8 +203,12 @@ func (mrc *MultiRoundCounter) TryAdvanceRound() (map[onet.TreeNodeID]*MessageDel
 
 	mrc.currentRound++
 
-	for k, v := range mrc.msgBuffer[mrc.currentRound] {
-		mrc.addMessage(v, k)
+	for sender, msg := range mrc.msgBuffer[mrc.currentRound] {
+		if err := mrc.VF(msg, sender); err != nil {
+			log.Lvlf1("%v. round: %v, sender: %s", err, msg.Round, sender)
+		} else {
+			mrc.addMessage(msg, sender)
+		}
 	}
 
 	for node, ora := range mrc.ackBuffer[mrc.currentRound] {

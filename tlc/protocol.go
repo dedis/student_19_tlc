@@ -10,45 +10,39 @@ import (
 // Name can be used to reference the registered protocol.
 var Name = "TLC"
 
+var defaultValidationFunction ValidationFunction
+
 func init() {
 	network.RegisterMessage(Initialize{})
 	network.RegisterMessage(MessageBroadcast{})
 	network.RegisterMessage(MessageAck{})
 	onet.GlobalProtocolRegister(Name, NewProtocol)
+
+	defaultValidationFunction = func(msg *MessageBroadcast, sender onet.TreeNodeID) error { return nil }
 }
 
 // TLC is the main structure holding the onet.Node.
 type TLC struct {
-	// The node that represents us
-	*onet.TreeNodeInstance
+	*onet.TreeNodeInstance // The node that represents us
 
-	// Service communication channels:
+	VF ValidationFunction // Validates message payload. Provided by service.
 
-	// the message we want to broadcast in the next round, given by the attached Service
-	Message chan []byte
-	// the messages to be delivered in this round.
-	ThresholdSet chan map[onet.TreeNodeID]*MessageDelivered
+	// Internal listening channels (communication with service):
+	Message      chan []byte                                // the message we want to broadcast in the next round
+	ThresholdSet chan map[onet.TreeNodeID]*MessageDelivered // the messages to be delivered in this round.
 
 	// External listening channels:
-
-	// The channel waiting for the Initialize message
-	init chan chanInitialize
-	// The channel waiting for this round's messages
-	roundMessages chan chanRoundMessage
-	// The channel waiting for this round's message acks
-	acks chan chanMessageAck
+	init          chan chanInitialize   // The channel waiting for the initialization message
+	roundMessages chan chanRoundMessage // The channel waiting for this round's messages
+	acks          chan chanAckMessage   // The channel waiting for this round's acks
 
 	// Internal routine channels:
+	die          chan bool // Currently for testing purposes (to terminate). !!Unsafe for deployment!!
+	canBroadcast chan bool // If this round's message is yet to be sent.
 
-	// Currently for testing purposes (to terminate). !!Unsafe for deployment!!
-	die chan bool
-	// If this round's message is yet to be sent.
-	canBroadcast chan bool
-
-	// Implements all the threshold counting logic
-	TAcks uint64
-	TMsgs uint64
-	mrc   *MultiRoundCounter
+	TAcks uint64             // acks per message threshold
+	TMsgs uint64             // acked messages threshold
+	mrc   *MultiRoundCounter // Implements all the threshold counting logic
 }
 
 // NewProtocol returns a TLC protocol instance with with the correct channels.
@@ -60,6 +54,7 @@ func NewProtocol(node *onet.TreeNodeInstance) (onet.ProtocolInstance, error) {
 
 	tlc := &TLC{
 		TreeNodeInstance: node,
+		VF:               defaultValidationFunction,
 		Message:          make(chan []byte, 5),
 		ThresholdSet:     make(chan map[onet.TreeNodeID]*MessageDelivered, 5),
 		die:              make(chan bool, 1),
@@ -148,6 +143,11 @@ func (tlc *TLC) Dispatch() error {
 	}
 }
 
+// SetValidationFunction sets the protocol's validation function. Must be set before protocol start.
+func (tlc *TLC) SetValidationFunction(vf ValidationFunction) {
+	tlc.VF = vf
+}
+
 // Terminate terminates the protocol.
 // * used for testing purposes, should not be used in deployment *
 func (tlc *TLC) Terminate() {
@@ -202,7 +202,7 @@ func (tlc *TLC) handleRoundMessage(roundMsg *chanRoundMessage) {
 }
 
 // handleAck collects other nodes' message acknowledgements
-func (tlc *TLC) handleAck(ack *chanMessageAck) {
+func (tlc *TLC) handleAck(ack *chanAckMessage) {
 	log.Lvlf3("%s Received ack. Server: %s; Hash: %x", tlc.Name(), ack.TreeNode.ID, ack.Hash)
 
 	tlc.mrc.AddAck(&ack.MessageAck, ack.TreeNode.ID)
