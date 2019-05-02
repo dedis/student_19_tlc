@@ -114,7 +114,7 @@ func TestRoundNoFaultyNodes(t *testing.T) {
 		case <-time.After(time.Second * 60):
 			t.Fatal("Timed out waiting for threads to deliver batches")
 		case <-done:
-			elapsed := time.Since(start)
+			elapsed := time.Since(start) // this time is meaningless  (should use simulation)
 			log.LLvlf1("Nodes: %v. Elapsed time for one round: %v", nbrNodes, elapsed)
 		}
 
