@@ -80,13 +80,15 @@ func (tac *singleRoundCounter) addMessage(msg *MessageBroadcast, sender onet.Tre
 	tac.messages[hash] = rmd
 
 	// if there were acks received before the message, check ack threshold condition
-	if v, ok := tac.ackPerMsg[hash]; ok {
-		if uint64(len(v)) >= tac.tAcks {
-			tac.messages[hash].TDelivered = true
-			tac.numTAcked++
-			if tac.numTAcked == tac.tMsgs {
-				tac.thresholdReached = true
-			}
+	if _, ok := tac.ackPerMsg[hash]; !ok {
+		tac.ackPerMsg[hash] = make(ackMap)
+	}
+
+	if v := tac.ackPerMsg[hash]; uint64(len(v)) >= tac.tAcks {
+		tac.messages[hash].TDelivered = true
+		tac.numTAcked++
+		if tac.numTAcked == tac.tMsgs {
+			tac.thresholdReached = true
 		}
 	}
 

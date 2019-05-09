@@ -79,6 +79,51 @@ func TestSRCThresholdsNormal(t *testing.T) {
 		}
 	}
 }
+
+func TestSRCThresholdsThin(t *testing.T) {
+	total, round := 9, 0
+	tMsgs := uint64((total + 1) / 2)
+	tAcks := uint64(0)
+
+	treeNodeIDs := prepareNodeIDs(total)
+	mbs, _ := prepareNodeMessages(treeNodeIDs, round)
+	treeNodeIDset := make(map[onet.TreeNodeID]*MessageBroadcast)
+	for i, nodeID := range treeNodeIDs {
+		treeNodeIDset[nodeID] = mbs[i]
+	}
+
+	src := newSingleRoundCounter(tMsgs, tAcks)
+
+	for i, msg := range mbs {
+		err := src.addMessage(msg, treeNodeIDs[i])
+		if err != nil {
+			t.Fatalf("addMessage returned error: %v", err)
+		}
+	}
+
+	if src.thresholdReached != true {
+		t.Fatal("Thresholds reached but round didn't finish")
+	}
+
+	batch := src.reset()
+	if len(batch) != total {
+		t.Errorf("SRC batch holding incorrect number of messages. has: %v, should have: %v", len(batch), total)
+	}
+	for id, delMsg := range batch {
+		if _, ok := treeNodeIDset[id]; !ok {
+			t.Errorf("Delivered message for non-existant node id: %v", id)
+		}
+		if delMsg.Round != 0 {
+			t.Errorf("Delivered message for incorrect round: %v (should be 0)", delMsg.Round)
+		}
+		if bytes.Compare(delMsg.Message, treeNodeIDset[id].Message) != 0 {
+			t.Errorf("Delivered message has incorrect message: %v (should be %v)", delMsg.Message, treeNodeIDset[id].Message)
+		}
+		if delMsg.TDelivered != true {
+			t.Error("Message incorrectly marked as *NOT* TDelivered (should be true)")
+		}
+	}
+}
 func TestSRCEarlyAcks(t *testing.T) {
 	total, round := 9, 0
 	tMsgs := uint64((total + 1) / 2)
