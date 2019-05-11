@@ -62,7 +62,18 @@ func (s *SimulationService) Node(config *onet.SimulationConfig) error {
 func (s *SimulationService) Run(config *onet.SimulationConfig) error {
 	size := config.Tree.Size()
 	log.Lvl2("Size is:", size, "rounds:", s.Rounds)
+
 	c := template.NewClient()
+
+	//if config.Overlay.
+
+	p, err := config.Overlay.CreateProtocol("TLC", config.Tree,
+		onet.NilServiceID)
+	if err != nil {
+		return err
+	}
+	go p.Start()
+
 	for round := 0; round < s.Rounds; round++ {
 		log.Lvl1("Starting round", round)
 		round := monitor.NewTimeMeasure("round")

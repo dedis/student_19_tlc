@@ -177,8 +177,10 @@ func (tlc *TLC) handleBroadcast(broadcastMsg []byte) {
 
 	ourID := tlc.TreeNodeInstance.TreeNode().ID
 	tlc.mrc.AddMessage(msg, ourID)
-	ourAck := &MessageAck{msg.Round, msg.Hash(ourID)}
-	tlc.mrc.AddAck(ourAck, ourID)
+	if tlc.TAcks > 0 {
+		ourAck := &MessageAck{msg.Round, msg.Hash(ourID)}
+		tlc.mrc.AddAck(ourAck, ourID)
+	}
 
 	return
 }
@@ -191,13 +193,12 @@ func (tlc *TLC) handleRoundMessage(roundMsg *chanRoundMessage) {
 	tlc.mrc.AddMessage(&roundMsg.MessageBroadcast, roundMsg.TreeNode.ID)
 	theirAck := &MessageAck{roundMsg.Round, roundMsg.Hash()}
 	tlc.mrc.AddAck(theirAck, roundMsg.TreeNode.ID)
-
-	ourID := tlc.TreeNodeInstance.TreeNode().ID
-	ourAck := &MessageAck{roundMsg.Round, roundMsg.Hash()}
-	tlc.mrc.AddAck(ourAck, ourID)
-
-	tlc.Broadcast(ourAck)
-
+	if tlc.TAcks > 0 {
+		ourID := tlc.TreeNodeInstance.TreeNode().ID
+		ourAck := &MessageAck{roundMsg.Round, roundMsg.Hash()}
+		tlc.mrc.AddAck(ourAck, ourID)
+		tlc.Broadcast(ourAck)
+	}
 	return
 }
 

@@ -11,7 +11,7 @@ type roundNum uint64
 type msghash [32]byte
 
 // Initialize is the first message sent to instantiate the protocol in all servers.
-// * Currently being used for testing purposes *
+// * Currently being used for testing purposes, should be unnecessary eventually *
 type Initialize struct {
 	TMsgs uint64
 	TAcks uint64
