@@ -45,6 +45,12 @@ type chanAckMessage struct {
 	MessageAck
 }
 
+// MessageDelivered is the format delivered to the service.
+type MessageDelivered struct {
+	*MessageBroadcast
+	TDelivered bool // true if the message was delivered by TMsgs nodes ("certified")
+}
+
 // Hash is used to obtain the Hash for MessageAck
 // * Should replace this with a better hash function (ask advisor) *
 func (mb *MessageBroadcast) Hash(sender onet.TreeNodeID) (out [32]byte) {
@@ -62,10 +68,4 @@ func (mb *MessageBroadcast) Hash(sender onet.TreeNodeID) (out [32]byte) {
 // * Should replace this with a better hash function (ask advisor) *
 func (rm *chanRoundMessage) Hash() (out [32]byte) {
 	return rm.MessageBroadcast.Hash(rm.TreeNode.ID)
-}
-
-// MessageDelivered is the format delivered to the service.
-type MessageDelivered struct {
-	*MessageBroadcast
-	TDelivered bool
 }
