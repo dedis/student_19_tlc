@@ -25,7 +25,7 @@ func init() {
 type TLC struct {
 	*onet.TreeNodeInstance // The node that represents us
 
-	VF ValidationFunction // Validates message payload. Provided by service.
+	VF ValidationFunction // Validates message payload. Must be provided by service.
 
 	// Internal listening channels (communication with service):
 	Message      chan []byte                                // the message we want to broadcast in the next round
@@ -45,7 +45,7 @@ type TLC struct {
 	mrc   *MultiRoundCounter // Implements all the threshold counting logic
 }
 
-// NewProtocol returns a TLC protocol instance with with the correct channels.
+// NewProtocol returns a TLC protocol instance with the correct channels.
 func NewProtocol(node *onet.TreeNodeInstance) (onet.ProtocolInstance, error) {
 	var err error
 
@@ -55,8 +55,8 @@ func NewProtocol(node *onet.TreeNodeInstance) (onet.ProtocolInstance, error) {
 	tlc := &TLC{
 		TreeNodeInstance: node,
 		VF:               defaultValidationFunction,
-		Message:          make(chan []byte, 5),
-		ThresholdSet:     make(chan map[onet.TreeNodeID]*MessageDelivered, 5),
+		Message:          make(chan []byte, 20),
+		ThresholdSet:     make(chan map[onet.TreeNodeID]*MessageDelivered, 20),
 		die:              make(chan bool, 1),
 		canBroadcast:     make(chan bool, 1),
 		TAcks:            TAsyncNotBFT,
@@ -157,7 +157,7 @@ func (tlc *TLC) Terminate() {
 
 // handleInitialize initializes the local protocol to the specs defined in the message.
 func (tlc *TLC) handleInitialize(in *Initialize) error {
-	log.Lvlf3("%s Received initialization message. TMsgs: %v; TAcks: %v", tlc.Name(), in.TMsgs, in.TAcks)
+	log.Lvlf2("%s Received initialization message. TMsgs: %v; TAcks: %v", tlc.Name(), in.TMsgs, in.TAcks)
 	tlc.TAcks = in.TAcks
 	tlc.TMsgs = in.TMsgs
 

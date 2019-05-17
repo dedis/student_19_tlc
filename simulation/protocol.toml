@@ -1,0 +1,10 @@
+Simulation = "TLCProtocol"
+Servers = 4
+Bf = 4
+Rounds = 10
+CloseWait = 6000
+Suite = "Ed25519"
+#SingleHost = true
+
+Hosts
+4
