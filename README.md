@@ -52,6 +52,7 @@ The root node's behaviour is defined in the [Run](simulation/protocol.go) method
 
 Run a simulation with:
 ```
+cd simulation/
 go build
 ./simulation protocol.toml
 ```
