@@ -49,3 +49,11 @@ type MessageDelivered struct {
 You can define the behaviour of _remote_ nodes a priori by modifying the [Dispatch](simulation/TLCWrapper.go) method of ```TLCWrapper```.
 
 The root node's behaviour is defined in the [Run](simulation/protocol.go) method.
+
+Run a simulation with:
+```
+go build
+./simulation protocol.toml
+```
+
+Contact me ([mvidigueira](https://github.com/mvidigueira)) if you have any problems.
