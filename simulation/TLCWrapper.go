@@ -7,15 +7,15 @@ import (
 	"github.com/dedis/student_19_tlc/tlc"
 )
 
+// TLCWrapper is a wrapper for the TLC object to implement special server side behaviour
 type TLCWrapper struct {
 	*tlc.TLC
 	TestingRounds int
 }
 
-func (tlcW *TLCWrapper) Start() error {
-	return tlcW.TLC.Start()
-}
-
+// Dispatch will call the dispatch method of the underlying TLC protocol instance,
+// as well as concurrently execute code that interacts with the tlc instance, for testing
+// purposes (behaviour one would expect from a service).
 func (tlcW *TLCWrapper) Dispatch() error {
 	if !tlcW.IsRoot() {
 		go func() {

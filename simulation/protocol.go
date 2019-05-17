@@ -79,9 +79,8 @@ func (s *SimulationProtocol) Node(config *onet.SimulationConfig) error {
 			return pi, err
 		}
 
-		tlc := pi.(*tlc.TLC)
 		tlcW := &TLCWrapper{
-			TLC:           tlc,
+			TLC:           pi.(*tlc.TLC),
 			TestingRounds: s.Rounds,
 		}
 
