@@ -107,47 +107,53 @@ type MultiRoundCounter struct {
 	ackBuffer map[roundNum]oneRoundAcks
 
 	currentRound roundNum
+	roundOver    bool
 
 	VF ValidationFunction
 }
 
 // NewMultiRoundCounter creates a new MultiRoundCounter where tMsgs is the message threshold and
 // tAcks is the acknowledgements per message threshold.
-func NewMultiRoundCounter(tMsgs, tAcks uint64) *MultiRoundCounter {
+func NewMultiRoundCounter(tMsgs, tAcks uint64, vf ValidationFunction) *MultiRoundCounter {
 	return &MultiRoundCounter{
 		singleRoundCounter: newSingleRoundCounter(tMsgs, tAcks),
 		msgBuffer:          make(map[roundNum]oneRoundMessages),
 		ackBuffer:          make(map[roundNum]oneRoundAcks),
 		currentRound:       0,
-		VF:                 defaultValidationFunction,
+		roundOver:          false,
+		VF:                 vf,
 	}
 }
 
 // AddMessage applies the tlc logic to a received message
-func (mrc *MultiRoundCounter) AddMessage(msg *MessageBroadcast, sender onet.TreeNodeID) error {
+func (mrc *MultiRoundCounter) AddMessage(msg *MessageBroadcast, sender onet.TreeNodeID) (shouldAck bool, err error) {
 	if msg.Round > mrc.currentRound {
 		if _, ok := mrc.msgBuffer[msg.Round]; !ok {
 			mrc.msgBuffer[msg.Round] = make(oneRoundMessages)
 		}
 		if _, ok := mrc.msgBuffer[msg.Round][sender]; ok {
-			return fmt.Errorf("Duplicate message. round: %v, sender: %s", msg.Round, sender)
+			return false, fmt.Errorf("Duplicate message. round: %v, sender: %s", msg.Round, sender)
 		}
 		mrc.msgBuffer[msg.Round][sender] = msg
-		return nil
+		return false, nil
 	}
 
 	if msg.Round == mrc.currentRound {
+		if mrc.roundOver {
+			return false, errors.New("Cannot add message: round has already ended")
+		}
+
 		if err := mrc.VF(msg, sender); err != nil {
-			return fmt.Errorf("%v. round: %v, sender: %s", err, msg.Round, sender)
+			return false, fmt.Errorf("%v", err)
 		}
 
 		err := mrc.addMessage(msg, sender)
 		if err != nil {
-			return fmt.Errorf("%v. round: %v, sender: %s", err, msg.Round, sender)
+			return false, fmt.Errorf("%v. round: %v, sender: %s", err, msg.Round, sender)
 		}
 	}
 
-	return nil
+	return true, nil
 }
 
 // AddAck applies the tlc logic to a received acknowledgement
@@ -167,7 +173,7 @@ func (mrc *MultiRoundCounter) AddAck(ack *MessageAck, sender onet.TreeNodeID) er
 		return nil
 	}
 
-	if ack.Round == mrc.currentRound {
+	if ack.Round == mrc.currentRound && !mrc.roundOver {
 		mrc.addAck(ack.Hash, sender)
 		return nil
 	}
@@ -185,11 +191,11 @@ func (mrc *MultiRoundCounter) RoundBroadcast(msg []byte) (*MessageBroadcast, err
 	return &MessageBroadcast{Round: mrc.currentRound, Message: msg}, nil
 }
 
-// TryAdvanceRound terminates the round if the minimum conditions are gathered
-// (broadcast this round's message and minimum thresholds are met).
+// TryEndRound ends the round if the minimum conditions are gathered
+// (has broadcast this round's message and minimum thresholds are met).
 // Returns a batch of the messages received during this round (and of this round),
 // and a non-nil error if the minimum conditons for advancement are not met
-func (mrc *MultiRoundCounter) TryAdvanceRound() (map[onet.TreeNodeID]*MessageDelivered, error) {
+func (mrc *MultiRoundCounter) TryEndRound() (map[onet.TreeNodeID]*MessageDelivered, error) {
 	if !mrc.hasBroadcast {
 		return nil, fmt.Errorf("Broadcast missing for this round (%d)", mrc.currentRound)
 	}
@@ -203,13 +209,30 @@ func (mrc *MultiRoundCounter) TryAdvanceRound() (map[onet.TreeNodeID]*MessageDel
 	delete(mrc.msgBuffer, mrc.currentRound)
 	delete(mrc.ackBuffer, mrc.currentRound)
 
+	mrc.roundOver = true
+
+	return oldbatch, nil
+}
+
+// AdvanceRound advances the round if the round is over.
+// This is suposed to be called after updating the Validation Function.
+// Returns a batch of the messages for which an acknowledgement should be broadcast.
+func (mrc *MultiRoundCounter) AdvanceRound() (map[onet.TreeNodeID]*MessageBroadcast, error) {
+	if !mrc.roundOver {
+		return nil, errors.New("Round is not over, cannot advance")
+	}
+
 	mrc.currentRound++
+	missingAckBroadcast := make(map[onet.TreeNodeID]*MessageBroadcast)
 
 	for sender, msg := range mrc.msgBuffer[mrc.currentRound] {
 		if err := mrc.VF(msg, sender); err != nil {
-			log.Lvlf1("%v. round: %v, sender: %s", err, msg.Round, sender)
+			log.Lvlf1("%v", err)
 		} else {
-			mrc.addMessage(msg, sender)
+			err := mrc.addMessage(msg, sender)
+			if err != nil {
+				missingAckBroadcast[sender] = msg
+			}
 		}
 	}
 
@@ -219,5 +242,8 @@ func (mrc *MultiRoundCounter) TryAdvanceRound() (map[onet.TreeNodeID]*MessageDel
 		}
 	}
 
-	return oldbatch, nil
+	mrc.roundOver = false
+	mrc.hasBroadcast = false
+
+	return missingAckBroadcast, nil
 }

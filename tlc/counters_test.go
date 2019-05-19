@@ -201,7 +201,8 @@ func TestMRCThresholdsNormal(t *testing.T) {
 		treeNodeIDset0[nodeID] = mbs0[i]
 	}
 
-	mrc := NewMultiRoundCounter(tMsgs, tAcks)
+	valFunction := func(msg *MessageBroadcast, sender onet.TreeNodeID) error { return nil }
+	mrc := NewMultiRoundCounter(tMsgs, tAcks, valFunction)
 
 	msg, err := mrc.RoundBroadcast([]byte{byte(15)})
 	if err != nil {
@@ -218,7 +219,7 @@ func TestMRCThresholdsNormal(t *testing.T) {
 		t.Fatal("Duplicate broadcast in same round")
 	}
 
-	if _, err := mrc.TryAdvanceRound(); err == nil {
+	if _, err := mrc.TryEndRound(); err == nil {
 		t.Fatal("Round advanced despite no broadcast or thresholds reached")
 	}
 
@@ -229,7 +230,7 @@ func TestMRCThresholdsNormal(t *testing.T) {
 		}
 	}
 
-	if _, err := mrc.TryAdvanceRound(); err == nil {
+	if _, err := mrc.TryEndRound(); err == nil {
 		t.Fatal("Round advanced despite no acks")
 	}
 
@@ -243,7 +244,7 @@ func TestMRCThresholdsNormal(t *testing.T) {
 		}
 	}
 
-	if _, err := mrc.TryAdvanceRound(); err == nil {
+	if _, err := mrc.TryEndRound(); err == nil {
 		t.Fatal("Round advanced despite insufficient acks")
 	}
 
@@ -255,10 +256,11 @@ func TestMRCThresholdsNormal(t *testing.T) {
 		}
 	}
 
-	batch, err := mrc.TryAdvanceRound()
+	batch, err := mrc.TryEndRound()
 	if err != nil {
 		t.Fatal("Thresholds reached but round didn't advance")
 	}
+	mrc.AdvanceRound()
 
 	if len(batch) != total {
 		t.Errorf("MRC batch holding incorrect number of messages. has: %v, should have: %v", len(batch), total)
@@ -310,32 +312,33 @@ func TestMRCBuffering(t *testing.T) {
 
 	treeNodeIDsets := []map[onet.TreeNodeID]*MessageBroadcast{treeNodeIDset0, treeNodeIDset1, treeNodeIDset2}
 
-	mrc := NewMultiRoundCounter(tMsgs, tAcks)
+	valFunction := func(msg *MessageBroadcast, sender onet.TreeNodeID) error { return nil }
+	mrc := NewMultiRoundCounter(tMsgs, tAcks, valFunction)
 
 	mrc.RoundBroadcast([]byte{byte(15)})
 
 	for i, msg := range mbs0 {
-		err := mrc.AddMessage(msg, treeNodeIDs[i])
+		_, err := mrc.AddMessage(msg, treeNodeIDs[i])
 		if err != nil {
 			t.Fatalf("AddMessage returned error: %v", err)
 		}
 	}
 
 	for i, msg := range mbs1 {
-		err := mrc.AddMessage(msg, treeNodeIDs[i])
+		_, err := mrc.AddMessage(msg, treeNodeIDs[i])
 		if err != nil {
 			t.Fatalf("AddMessage returned error: %v", err)
 		}
 	}
 
 	for i, msg := range mbs2 {
-		err := mrc.AddMessage(msg, treeNodeIDs[i])
+		_, err := mrc.AddMessage(msg, treeNodeIDs[i])
 		if err != nil {
 			t.Fatalf("AddMessage returned error: %v", err)
 		}
 	}
 
-	if _, err := mrc.TryAdvanceRound(); err == nil {
+	if _, err := mrc.TryEndRound(); err == nil {
 		t.Fatal("Round advanced despite no acks")
 	}
 
@@ -358,7 +361,7 @@ func TestMRCBuffering(t *testing.T) {
 		}
 	}
 
-	if _, err := mrc.TryAdvanceRound(); err == nil {
+	if _, err := mrc.TryEndRound(); err == nil {
 		t.Fatal("Round advanced despite no acks for round 0")
 	}
 
@@ -371,12 +374,13 @@ func TestMRCBuffering(t *testing.T) {
 		}
 	}
 
-	batch0, err := mrc.TryAdvanceRound()
+	batch0, err := mrc.TryEndRound()
 	if err != nil {
 		t.Fatal("Round didn't advance despite reaching round 0 thresholds")
 	}
+	mrc.AdvanceRound()
 
-	if _, err = mrc.TryAdvanceRound(); err == nil {
+	if _, err = mrc.TryEndRound(); err == nil {
 		t.Fatal("Round advanced despite insufficient acks for round 1")
 	}
 
@@ -388,24 +392,26 @@ func TestMRCBuffering(t *testing.T) {
 		}
 	}
 
-	_, err = mrc.TryAdvanceRound()
+	_, err = mrc.TryEndRound()
 	if err == nil {
 		t.Fatal("Round advanced despite missing round 1 broadcast")
 	}
 
 	mrc.RoundBroadcast([]byte{byte(15)})
 
-	batch1, err := mrc.TryAdvanceRound()
+	batch1, err := mrc.TryEndRound()
 	if err != nil {
 		t.Fatal("Round didn't advance despite reaching round 1 thresholds")
 	}
+	mrc.AdvanceRound()
 
 	mrc.RoundBroadcast([]byte{byte(15)})
 
-	batch2, err := mrc.TryAdvanceRound()
+	batch2, err := mrc.TryEndRound()
 	if err != nil {
 		t.Fatal("Round didn't advance despite reaching round 2 thresholds")
 	}
+	mrc.AdvanceRound()
 
 	for i, batch := range []map[onet.TreeNodeID]*MessageDelivered{batch0, batch1, batch2} {
 		if len(batch) != total {

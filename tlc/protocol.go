@@ -100,7 +100,7 @@ func (tlc *TLC) Dispatch() error {
 		}
 	}
 
-	tlc.mrc = NewMultiRoundCounter(tlc.TMsgs, tlc.TAcks)
+	tlc.mrc = NewMultiRoundCounter(tlc.TMsgs, tlc.TAcks, tlc.VF)
 
 	// So that we can start to acknowledge other nodes' messages for this round
 	// without having to wait for our own broadcast.
@@ -167,6 +167,8 @@ func (tlc *TLC) handleInitialize(in *Initialize) error {
 // handleBroadcast broadcasts the round message to other nodes.
 // As we don't broadcast to ourselves, it simulates this behaviour for the MultiRoundCounter.
 func (tlc *TLC) handleBroadcast(broadcastMsg []byte) {
+	tlc.ReadyForNextRound()
+
 	msg, err := tlc.mrc.RoundBroadcast(broadcastMsg)
 	if err != nil {
 		panic("Should never happen: double broadcast")
@@ -190,10 +192,14 @@ func (tlc *TLC) handleBroadcast(broadcastMsg []byte) {
 func (tlc *TLC) handleRoundMessage(roundMsg *chanRoundMessage) {
 	log.Lvlf3("%s Received message. Server: %s; Message: %s", tlc.Name(), roundMsg.TreeNode.ID, roundMsg.Message)
 
-	tlc.mrc.AddMessage(&roundMsg.MessageBroadcast, roundMsg.TreeNode.ID)
+	shouldAck, err := tlc.mrc.AddMessage(&roundMsg.MessageBroadcast, roundMsg.TreeNode.ID)
+	if err != nil {
+		return // can also print error
+	}
+
 	theirAck := &MessageAck{roundMsg.Round, roundMsg.Hash()}
 	tlc.mrc.AddAck(theirAck, roundMsg.TreeNode.ID)
-	if tlc.TAcks > 0 {
+	if shouldAck && tlc.TAcks > 0 {
 		ourID := tlc.TreeNodeInstance.TreeNode().ID
 		ourAck := &MessageAck{roundMsg.Round, roundMsg.Hash()}
 		tlc.mrc.AddAck(ourAck, ourID)
@@ -214,7 +220,7 @@ func (tlc *TLC) handleAck(ack *chanAckMessage) {
 // If successful, it places that round's batch of delivered messages in the ThresholdSet channel
 // and re-enables broadcasting.
 func (tlc *TLC) tryEndRound() {
-	batch, err := tlc.mrc.TryAdvanceRound()
+	batch, err := tlc.mrc.TryEndRound()
 	if err == nil {
 		tlc.ThresholdSet <- batch
 		tlc.canBroadcast <- true
@@ -223,4 +229,24 @@ func (tlc *TLC) tryEndRound() {
 		log.Lvlf4("Could not advance round: %s", err)
 	}
 	return
+}
+
+// ReadyForNextRound signals the protocol that the validation function has been updated and it can start
+// checking messages of the next round. It gets called automatically when a message to broadcast is
+// given, but can be called in advance e.g. when the message isn't ready but you want to start
+// acknowledging other node's messages in advance (speeds up the systems's overall performance)
+func (tlc *TLC) ReadyForNextRound() error {
+	missingAckBroadcast, err := tlc.mrc.AdvanceRound()
+	if err != nil {
+		return err
+	}
+	if tlc.TAcks > 0 {
+		for sender, msg := range missingAckBroadcast {
+			ourID := tlc.TreeNodeInstance.TreeNode().ID
+			ourAck := &MessageAck{msg.Round, msg.Hash(sender)}
+			tlc.mrc.AddAck(ourAck, ourID)
+			tlc.Broadcast(ourAck)
+		}
+	}
+	return nil
 }
