@@ -58,8 +58,8 @@ func TestInitialize(t *testing.T) {
 	}
 }
 
-func TestRoundNoFaultyNodes(t *testing.T) {
-	nodes := []int{3, 5, 13, 60}
+func TestMultipleRoundsNoFaultyNodes(t *testing.T) {
+	nodes := []int{3, 5, 13}
 	for _, nbrNodes := range nodes {
 		threshold := uint64(nbrNodes/2 + 1)
 
@@ -77,7 +77,6 @@ func TestRoundNoFaultyNodes(t *testing.T) {
 		case <-time.After(time.Second * 1):
 			for i, server := range servers {
 				tns := local.GetTreeNodeInstances(server.ServerIdentity.ID)
-				//log.LLvlf1("#TNI = %d in server %v", len(tns), server.ServerIdentity.ID)
 				for _, tni := range tns {
 					pis[i] = tni.ProtocolInstance().(*TLC)
 				}
@@ -86,36 +85,47 @@ func TestRoundNoFaultyNodes(t *testing.T) {
 
 		start := time.Now()
 
-		for i, pi := range pis {
-			msg := []byte(fmt.Sprintf("Hello World TLC from node %d", i))
-			pi.Message <- msg
-		}
+		for round := 0; round < 2; round++ {
+			for i, pi := range pis {
+				msg := []byte(fmt.Sprintf("Hello World TLC from node %d, message round %d", i, round))
+				pi.Message <- msg
+			}
 
-		var wg sync.WaitGroup
+			var wg sync.WaitGroup
 
-		wg.Add(len(pis))
+			wg.Add(len(pis))
 
-		batches := make([]map[onet.TreeNodeID]*MessageDelivered, len(pis))
+			batches := make([]map[onet.TreeNodeID]*MessageDelivered, len(pis))
 
-		for i, pi := range pis {
-			go func(i int, pi *TLC) {
-				defer wg.Done()
-				batches[i] = <-pi.ThresholdSet
-			}(i, pi)
-		}
+			for i, pi := range pis {
+				go func(i int, pi *TLC) {
+					defer wg.Done()
+					batches[i] = <-pi.ThresholdSet
+				}(i, pi)
+			}
 
-		done := make(chan bool)
-		go func() {
-			wg.Wait()
-			done <- true
-		}()
+			done := make(chan bool)
+			go func() {
+				wg.Wait()
+				done <- true
+			}()
 
-		select {
-		case <-time.After(time.Second * 60):
-			t.Fatal("Timed out waiting for threads to deliver batches")
-		case <-done:
-			elapsed := time.Since(start) // this time is meaningless  (should use simulation)
-			log.LLvlf1("Nodes: %v. Elapsed time for one round: %v", nbrNodes, elapsed)
+			select {
+			case <-time.After(time.Second * 30):
+				t.Fatal("Timed out waiting for threads to deliver batches")
+			case <-done:
+				elapsed := time.Since(start) // this time is meaningless  (should use simulation)
+				log.LLvlf1("Nodes: %v. Round: %v. Elapsed time since start : %v", nbrNodes, round, elapsed)
+			}
+
+			for i, pi := range pis {
+				require.Equal(t, threshold, pi.TMsgs)
+				require.Equal(t, threshold, pi.TAcks)
+				require.Equal(t, threshold, countTDelivered(batches[i]))
+				for _, m := range batches[i] {
+					require.Equal(t, round, int(m.Round))
+				}
+			}
 		}
 
 		for _, pi := range pis {
@@ -123,20 +133,11 @@ func TestRoundNoFaultyNodes(t *testing.T) {
 		}
 
 		local.CloseAll()
-
-		for i, pi := range pis {
-			require.Equal(t, threshold, pi.TMsgs)
-			require.Equal(t, threshold, pi.TAcks)
-			require.Equal(t, threshold, countTDelivered(batches[i]))
-			for _, m := range batches[i] {
-				require.Equal(t, 0, int(m.Round))
-			}
-		}
 	}
 }
 
 func TestRoundMinorityFaulty(t *testing.T) {
-	nodes := []int{3, 5, 13, 60}
+	nodes := []int{3, 5, 13}
 	for _, nbrNodes := range nodes {
 		threshold := uint64(nbrNodes/2 + 1)
 		f := uint64(nbrNodes) - threshold
@@ -215,6 +216,84 @@ func TestRoundMinorityFaulty(t *testing.T) {
 				require.Equal(t, 0, int(m.Round))
 			}
 		}
+	}
+}
+
+func TestBuffering(t *testing.T) {
+	nodes := []int{3, 5, 13}
+	for _, nbrNodes := range nodes {
+		threshold := uint64(nbrNodes/2 + 1)
+
+		local := onet.NewLocalTest(tSuite)
+		servers, _, tree := local.GenTree(nbrNodes, true)
+		log.Lvl3(tree.Dump())
+
+		log.LLvl1("Starting protocol")
+
+		local.StartProtocol("TLC", tree)
+
+		pis := make([]*TLC, len(servers))
+
+		select {
+		case <-time.After(time.Second * 1):
+			for i, server := range servers {
+				tns := local.GetTreeNodeInstances(server.ServerIdentity.ID)
+				for _, tni := range tns {
+					pis[i] = tni.ProtocolInstance().(*TLC)
+				}
+			}
+		}
+
+		start := time.Now()
+
+		// first round
+
+		for i, pi := range pis {
+			msg := []byte(fmt.Sprintf("Hello World TLC from node %d, message round %d", i, 0))
+			pi.Message <- msg
+		}
+
+		var wg sync.WaitGroup
+
+		wg.Add(len(pis))
+
+		batches := make([]map[onet.TreeNodeID]*MessageDelivered, len(pis))
+
+		for i, pi := range pis {
+			go func(i int, pi *TLC) {
+				defer wg.Done()
+				batches[i] = <-pi.ThresholdSet
+			}(i, pi)
+		}
+
+		done := make(chan bool)
+		go func() {
+			wg.Wait()
+			done <- true
+		}()
+
+		select {
+		case <-time.After(time.Second * 30):
+			t.Fatal("Timed out waiting for threads to deliver batches")
+		case <-done:
+			elapsed := time.Since(start) // this time is meaningless  (should use simulation)
+			log.LLvlf1("Nodes: %v. Round: %v. Elapsed time since start : %v", nbrNodes, 0, elapsed)
+		}
+
+		for i, pi := range pis {
+			require.Equal(t, threshold, pi.TMsgs)
+			require.Equal(t, threshold, pi.TAcks)
+			require.Equal(t, threshold, countTDelivered(batches[i]))
+			for _, m := range batches[i] {
+				require.Equal(t, 0, int(m.Round))
+			}
+		}
+
+		for _, pi := range pis {
+			pi.Terminate()
+		}
+
+		local.CloseAll()
 	}
 }
 

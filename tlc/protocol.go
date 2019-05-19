@@ -167,7 +167,7 @@ func (tlc *TLC) handleInitialize(in *Initialize) error {
 // handleBroadcast broadcasts the round message to other nodes.
 // As we don't broadcast to ourselves, it simulates this behaviour for the MultiRoundCounter.
 func (tlc *TLC) handleBroadcast(broadcastMsg []byte) {
-	tlc.ReadyForNextRound()
+	err := tlc.ReadyForNextRound()
 
 	msg, err := tlc.mrc.RoundBroadcast(broadcastMsg)
 	if err != nil {
