@@ -131,6 +131,7 @@ func (tlc *TLC) Dispatch() error {
 		case broadcastMsg := <-msgToBroadcast:
 			tlc.handleBroadcast(broadcastMsg)
 			log.Lvlf2("%s Message from service: %s", tlc.Name(), broadcastMsg)
+			tlc.tryEndRound()
 		case received := <-tlc.roundMessages:
 			tlc.handleRoundMessage(&received)
 			tlc.tryEndRound()
@@ -175,7 +176,7 @@ func (tlc *TLC) handleBroadcast(broadcastMsg []byte) {
 	}
 
 	tlc.Broadcast(msg)
-	log.Lvlf3("%v Broadcasted message for round %v", tlc.Name(), tlc.mrc.currentRound)
+	log.LLvlf3("%v Broadcasted message for round %v", tlc.Name(), tlc.mrc.currentRound)
 
 	ourID := tlc.TreeNodeInstance.TreeNode().ID
 	tlc.mrc.AddMessage(msg, ourID)
@@ -194,11 +195,11 @@ func (tlc *TLC) handleRoundMessage(roundMsg *chanRoundMessage) {
 
 	shouldAck, err := tlc.mrc.AddMessage(&roundMsg.MessageBroadcast, roundMsg.TreeNode.ID)
 	if err != nil {
-		return // can also print error
+		return // print error
 	}
-
 	theirAck := &MessageAck{roundMsg.Round, roundMsg.Hash()}
 	tlc.mrc.AddAck(theirAck, roundMsg.TreeNode.ID)
+
 	if shouldAck && tlc.TAcks > 0 {
 		ourID := tlc.TreeNodeInstance.TreeNode().ID
 		ourAck := &MessageAck{roundMsg.Round, roundMsg.Hash()}

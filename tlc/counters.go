@@ -166,7 +166,7 @@ func (mrc *MultiRoundCounter) AddAck(ack *MessageAck, sender onet.TreeNodeID) er
 			mrc.ackBuffer[ack.Round][sender] = make(map[msghash]bool)
 		}
 		if _, ok := mrc.ackBuffer[ack.Round][sender][ack.Hash]; ok {
-			return fmt.Errorf("Duplicate message. round: %v, sender: %s", ack.Round, sender)
+			return fmt.Errorf("Duplicate acknowledgement. round: %v, sender: %s", ack.Round, sender)
 		}
 
 		mrc.ackBuffer[ack.Round][sender][ack.Hash] = true
@@ -230,8 +230,10 @@ func (mrc *MultiRoundCounter) AdvanceRound() (map[onet.TreeNodeID]*MessageBroadc
 			log.Lvlf1("%v", err)
 		} else {
 			err := mrc.addMessage(msg, sender)
-			if err != nil {
+			if err == nil {
 				missingAckBroadcast[sender] = msg
+			} else {
+				log.Lvlf1("%v", err)
 			}
 		}
 	}
