@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"go.dedis.ch/onet/log"
 	"go.dedis.ch/onet/v3"
+	"go.dedis.ch/onet/v3/log"
 )
 
 // ValidationFunction validates the correctness of message payloads

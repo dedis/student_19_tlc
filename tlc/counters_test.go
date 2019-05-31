@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"go.dedis.ch/onet"
+	"go.dedis.ch/onet/v3"
 )
 
 func TestSRCThresholdsNormal(t *testing.T) {
