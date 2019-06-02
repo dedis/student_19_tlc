@@ -224,9 +224,12 @@ func TestMRCThresholdsNormal(t *testing.T) {
 	}
 
 	for i, msg := range mbs0 {
-		err := mrc.addMessage(msg, treeNodeIDs[i])
+		shouldAck, err := mrc.AddMessage(msg, treeNodeIDs[i])
 		if err != nil {
 			t.Fatalf("AddMessage returned error: %v", err)
+		}
+		if shouldAck != true {
+			t.Fatal("AddMessage returned shouldAck=false. Should be true")
 		}
 	}
 
@@ -237,9 +240,9 @@ func TestMRCThresholdsNormal(t *testing.T) {
 	// insufficient acks
 	for _, ack := range acks0[:tMsgs-1] {
 		for _, nodeID := range treeNodeIDs {
-			err := mrc.addAck(ack.Hash, nodeID)
+			err := mrc.AddAck(ack, nodeID)
 			if err != nil {
-				t.Fatalf("addAck returned error: %v", err)
+				t.Fatalf("AddAck returned error: %v", err)
 			}
 		}
 	}
@@ -250,9 +253,9 @@ func TestMRCThresholdsNormal(t *testing.T) {
 
 	// last ack needed
 	for _, nodeID := range treeNodeIDs {
-		err := mrc.addAck(acks0[tMsgs-1].Hash, nodeID)
+		err := mrc.AddAck(acks0[tMsgs-1], nodeID)
 		if err != nil {
-			t.Fatalf("addAck returned error: %v", err)
+			t.Fatalf("AddAck returned error: %v", err)
 		}
 	}
 
