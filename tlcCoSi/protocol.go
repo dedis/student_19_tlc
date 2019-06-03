@@ -2,8 +2,8 @@
 package tlccosi
 
 import (
+	"errors"
 	"fmt"
-	"runtime/debug"
 	"sort"
 
 	"go.dedis.ch/kyber/pairing"
@@ -107,12 +107,14 @@ func (tlc *TLC) Start() error {
 // on the three channels we use: for listening (external), broadcasting and termination (internal).
 func (tlc *TLC) Dispatch() error {
 	defer tlc.Done()
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println("stacktrace from panic: \n" + string(debug.Stack()))
-			return
-		}
-	}()
+	/*
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Println("stacktrace from panic: \n" + string(debug.Stack()))
+				return
+			}
+		}()
+	*/
 
 	if !tlc.IsRoot() {
 		log.Lvl2(tlc.Name(), "Waiting for initialize")
@@ -255,7 +257,7 @@ func (tlc *TLC) handleRoundMessage(roundMsg *chanRoundMessage) {
 func (tlc *TLC) handleAck(ack *chanAckMessage) {
 	err := tlc.addSignature(ack)
 	if err != nil {
-		log.Lvl2(err)
+		log.Lvlf2("addSignature: %s", err)
 		return
 	}
 
@@ -266,19 +268,13 @@ func (tlc *TLC) handleAck(ack *chanAckMessage) {
 			return
 		}
 
-		err = tlc.verifyThresholdCertified(certMsg)
+		err = tlc.mrc.AddMessageCertified(certMsg, tlc.TreeNode().ID)
 		if err != nil {
-			log.Lvlf2("%s", err)
+			log.Lvlf4("%s", err)
 			return
 		}
 
 		tlc.Broadcast(certMsg)
-
-		err = tlc.mrc.AddMessageCertified(certMsg, tlc.TreeNode().ID)
-		if err != nil {
-			log.Lvlf2("%s", err)
-			return
-		}
 	}
 
 	return
@@ -288,13 +284,13 @@ func (tlc *TLC) handleAck(ack *chanAckMessage) {
 func (tlc *TLC) handleCertifiedMessage(certMsg *chanCertifiedMessage) {
 	err := tlc.verifyThresholdCertified(&certMsg.MessageCertified)
 	if err != nil {
-		log.Lvlf2("%s", err)
+		log.Lvlf2("Verify threshold: %s", err)
 		return
 	}
 
 	err = tlc.mrc.AddMessageCertified(&certMsg.MessageCertified, certMsg.TreeNode.ID)
 	if err != nil {
-		log.Lvlf2("%s", err)
+		log.Lvlf4("%s", err)
 		return
 	}
 
@@ -309,9 +305,9 @@ func (tlc *TLC) tryEndRound() {
 	if err == nil {
 		tlc.ThresholdSet <- batch
 		tlc.canBroadcast <- true
-		log.Lvlf4("Round advanced. Now at round %d", tlc.mrc.currentRound)
+		log.Lvlf3("%v Round advanced. Now at round %d", tlc.Name(), tlc.mrc.currentRound)
 	} else {
-		log.Lvlf4("Could not advance round: %s", err)
+		log.Lvlf5("Could not advance round: %s", err)
 	}
 	return
 }
@@ -345,7 +341,7 @@ func (tlc *TLC) ReadyForNextRound() error {
 // Signing, counting, and verifying signatures (helper functions)
 
 func (tlc *TLC) signMsg(msgRound *chanRoundMessage) ([]byte, error) {
-	log.Lvlf3("%v, Signing message from: %v. Hash: %v", tlc.Name(), msgRound.TreeNode.ID, msgRound.Hash())
+	log.Lvlf5("%v, Signing message from: %v. Hash: %v", tlc.Name(), msgRound.TreeNode.ID, msgRound.Hash())
 	hash := msgRound.Hash()
 	return bdn.Sign(tlc.suite, tlc.Private(), hash[:])
 }
@@ -363,7 +359,7 @@ func (tlc *TLC) verifyThresholdCertified(certMsg *MessageCertified) error {
 	}
 
 	if mask.CountEnabled() < int(tlc.TAcks) {
-		return fmt.Errorf("Certificate doesn't meet threshold number of acknowlegdments. Expected %d. Got: %d", tlc.TAcks, mask.CountEnabled())
+		return fmt.Errorf("Certificate doesn't meet threshold number of acknowlegdments. Expected %d. Have: %d", tlc.TAcks, mask.CountEnabled())
 	}
 
 	aggPubKey, err := bdn.AggregatePublicKeys(tlc.suite, mask)
@@ -391,6 +387,9 @@ func newSignatureCounter(hash [32]byte, msg *MessageBroadcast) *signatureCounter
 
 // Checks that an acknowledgement's signature is correct and adds it to the counter
 func (tlc *TLC) addSignature(ack *chanAckMessage) error {
+	if ack.Hash != tlc.sigCounter.messageHash {
+		return errors.New("Ack hash mismatch (ack is likely outdated)")
+	}
 	err := bdn.Verify(tlc.suite, ack.TreeNode.ServerIdentity.Public, tlc.sigCounter.messageHash[:], ack.Signature)
 	if err != nil {
 		return err
@@ -409,7 +408,7 @@ func (tlc *TLC) countSignatures() int {
 // Prepares this round's certified message (appends certificate), if possible.
 func (tlc *TLC) prepareCertifiedMessage() (*MessageCertified, error) {
 	if tlc.countSignatures() != int(tlc.TAcks) {
-		return nil, fmt.Errorf("Not enough signatures to prepare error message. Expected: %d. Got: %d", tlc.TAcks, tlc.countSignatures())
+		return nil, fmt.Errorf("Insufficient signatures for certification. Expected: %d. Have: %d", tlc.TAcks, tlc.countSignatures())
 	}
 
 	var sigs [][]byte
@@ -417,8 +416,6 @@ func (tlc *TLC) prepareCertifiedMessage() (*MessageCertified, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	log.Lvl3("aggregating signatures")
 
 	var keys []int
 	for k := range tlc.sigCounter.signatures {

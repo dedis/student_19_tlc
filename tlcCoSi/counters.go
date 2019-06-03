@@ -155,7 +155,7 @@ func (mrc *MultiRoundCounterCoSi) AddMessageCertified(msg *MessageCertified, sen
 
 	if msg.Round == mrc.currentRound {
 		if mrc.roundOver {
-			return errors.New("Cannot add certified message: round has already ended")
+			return errors.New("Ignoring certified message: round has already ended")
 		}
 
 		err := mrc.addMessageCertified(msg)
