@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"sort"
 
-	"go.dedis.ch/kyber/pairing"
-	"go.dedis.ch/kyber/sign"
+	"go.dedis.ch/kyber/v3/pairing"
+	"go.dedis.ch/kyber/v3/sign"
 	"go.dedis.ch/onet/v3"
 	"go.dedis.ch/onet/v3/log"
 	"go.dedis.ch/onet/v3/network"
 
-	"go.dedis.ch/kyber/sign/bdn"
+	"go.dedis.ch/kyber/v3/sign/bdn"
 )
 
 // Name can be used to reference the registered protocol.
@@ -63,7 +63,8 @@ func NewProtocol(node *onet.TreeNodeInstance) (onet.ProtocolInstance, error) {
 	var err error
 
 	nbrNodes := len(node.Tree().List())
-	TAsyncNotBFT := uint64(nbrNodes/2 + 1)
+	//TAsyncNotBFT := uint64(nbrNodes/2 + 1)
+	TAsyncBFT := uint64(2*nbrNodes/3 + 1)
 
 	tlc := &TLC{
 		TreeNodeInstance: node,
@@ -72,8 +73,8 @@ func NewProtocol(node *onet.TreeNodeInstance) (onet.ProtocolInstance, error) {
 		ThresholdSet:     make(chan map[onet.TreeNodeID]*MessageDelivered, 20),
 		die:              make(chan bool, 1),
 		canBroadcast:     make(chan bool, 1),
-		TAcks:            TAsyncNotBFT,
-		TMsgs:            TAsyncNotBFT,
+		TAcks:            TAsyncBFT,
+		TMsgs:            TAsyncBFT,
 		suite:            pairing.NewSuiteBn256(),
 	}
 

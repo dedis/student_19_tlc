@@ -50,7 +50,8 @@ func NewProtocol(node *onet.TreeNodeInstance) (onet.ProtocolInstance, error) {
 	var err error
 
 	nbrNodes := len(node.Tree().List())
-	TAsyncNotBFT := uint64(nbrNodes/2 + 1)
+	//TAsyncNotBFT := uint64(nbrNodes/2 + 1)
+	TAsyncBFT := uint64(2*nbrNodes/3 + 1)
 
 	tlc := &TLC{
 		TreeNodeInstance: node,
@@ -59,17 +60,17 @@ func NewProtocol(node *onet.TreeNodeInstance) (onet.ProtocolInstance, error) {
 		ThresholdSet:     make(chan map[onet.TreeNodeID]*MessageDelivered, 20),
 		die:              make(chan bool, 1),
 		canBroadcast:     make(chan bool, 1),
-		TAcks:            TAsyncNotBFT,
-		TMsgs:            TAsyncNotBFT,
+		TAcks:            TAsyncBFT,
+		TMsgs:            TAsyncBFT,
 	}
 
-	if err := node.RegisterChannelLength(&tlc.init, 10000); err != nil {
+	if err := node.RegisterChannelLength(&tlc.init, 100000); err != nil {
 		return tlc, err
 	}
-	if err := node.RegisterChannelLength(&tlc.roundMessages, 10000); err != nil {
+	if err := node.RegisterChannelLength(&tlc.roundMessages, 100000); err != nil {
 		return tlc, err
 	}
-	if err := node.RegisterChannelLength(&tlc.acks, 10000); err != nil {
+	if err := node.RegisterChannelLength(&tlc.acks, 100000); err != nil {
 		return tlc, err
 	}
 
@@ -130,7 +131,7 @@ func (tlc *TLC) Dispatch() error {
 		select {
 		case broadcastMsg := <-msgToBroadcast:
 			tlc.handleBroadcast(broadcastMsg)
-			log.Lvlf2("%s Message from service: %s", tlc.Name(), broadcastMsg)
+			log.Lvlf3("%s Message from service: %s", tlc.Name(), broadcastMsg)
 			tlc.tryEndRound()
 		case received := <-tlc.roundMessages:
 			tlc.handleRoundMessage(&received)

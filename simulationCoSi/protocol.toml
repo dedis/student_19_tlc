@@ -1,10 +1,11 @@
 Simulation = "TLCProtocolCoSi"
-Servers = 4
+Servers = 10
 Bf = 4
 Rounds = 10
 CloseWait = 6000
 Suite = "bn256.adapter"
+RunWait = "300s"
 #SingleHost = true
 
 Hosts
-4
+101
